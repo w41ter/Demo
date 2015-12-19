@@ -15,9 +15,16 @@ namespace scheme
         public:
             parser(lexer::lexer &l) : lexer(l) {}
 
-            ast_node *parser_sexpr();
+            ast_node *parser_expr();
 
         protected:
+            ast_node *parser_sexpr();
+            ast_node *parser_keyword();
+            ast_node *parser_body();
+            ast_node *parser_lambda();
+            ast_node *parser_if();
+            ast_node *parser_set();
+
             void advance();
             void match(lexer::token_kind kind);
 
