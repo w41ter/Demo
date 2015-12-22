@@ -40,7 +40,7 @@ do {                            \
 TEST_CASE(testLexer) {
     const char *data = "\
         ((let var b))   \
-        #()'`,,@. + - ...\
+        ()' + - \
     ";
     string_input in(data);
     lexer lex(in);
@@ -53,14 +53,9 @@ TEST_CASE(testLexer) {
     Except(token_kind::TK_ID);
     Except(token_kind::TK_RPAREN);
     Except(token_kind::TK_RPAREN);
-    Except(token_kind::TK_DONT_KNOW);
+    Except(token_kind::TK_LPAREN);
     Except(token_kind::TK_RPAREN);    
     Except(token_kind::TK_QUOTE);
-    Except(token_kind::TK_BACKTICKS);
-    Except(token_kind::TK_COMMA);
-    Except(token_kind::TK_COMMA_AT);
-    Except(token_kind::TK_DOT);    
-    Except(token_kind::TK_ID);
     Except(token_kind::TK_ID);
     Except(token_kind::TK_ID);
 }
