@@ -7,6 +7,7 @@
 #include <iostream>
 #include <csignal>
 #include <csetjmp>
+#include <cstring>
 
 struct BaseCase
 {
@@ -155,7 +156,8 @@ void do_check_failed(F&& f, Args&&... args)
 template <typename... Msgs>
 void do_check_failed(Msgs&&... msgs)
 {
-    std::initializer_list<int>{(std::cout << msgs << std::endl, 0)...};
+    std::initializer_list<int>{(std::cout << msgs, 0)...};
+    std::cout << std::endl;
 }
 
 #define TEST_CASE(test_name)                                                                    \
@@ -182,10 +184,36 @@ do {                                                                            
     }                                                                                           \
 } while(0)
 
+#define G_STRING(str1, str2, strict, ...)                                                       \
+do {                                                                                            \
+    UnitTest::getInstance().checkFile(__FILE__);                                                \
+    UnitTest::getInstance().checkLine(__LINE__);                                                \
+    bool cond = strcmp((str1), (str2)) == 0;                                                    \
+    if(!(cond)) {                                                                               \
+        UnitTest::getInstance().failure();                                                      \
+        if(strict) {                                                                            \
+            std::cout << "check \"" << str1 << "\" == \"" << str2 << "\" failed." << std::endl; \
+            std::cout << "critical error at " __FILE__ "(" << __LINE__ << ")." << std::endl;    \
+            do_check_failed(__VA_ARGS__);                                                       \
+            longjmp(UnitTest::abort_case(), true);                                              \
+        } else {                                                                                \
+            std::cout << "check \"" << str1 << "\" == \"" << str2 << "\" failed." << "at "      \
+                << __FILE__ << "(" << __LINE__ << ")" << std::endl;                             \
+            do_check_failed(__VA_ARGS__);                                                       \
+        }                                                                                       \
+    }                                                                                           \
+} while(0)
+
 #define TEST_CHECK(cond, ...)                                                                   \
 G_CHECK(cond, false, __VA_ARGS__)
 
 #define TEST_REQUIRE(cond, ...)                                                                 \
 G_CHECK(cond, true, __VA_ARGS__)
+
+#define TEST_CHECK_STRING(str1, str2, ...)                                                      \
+G_STRING(str1, str2, false, __VA_ARGS__)
+
+#define TEST_REQUIRE_STRING(str1, str2, ...)                                                    \
+G_STRING(str1, str2, true, __VA_ARGS__)
 
 #endif  /* __UNIT_TEST_H__ */
