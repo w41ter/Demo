@@ -24,33 +24,14 @@ namespace scheme
             auto &keyword = keywords();
             token_value token[] = {
                 token_value::TV_IF,          // if
-                token_value::TV_ELSE,        // else
-                token_value::TV_QUOTE,       // quote
                 token_value::TV_LAMBDA,      // lambda
                 token_value::TV_SET,         // set!
                 token_value::TV_BEGIN,       // begin 
-                token_value::TV_COND,        // cond 
-                token_value::TV_AND,         // and 
-                token_value::TV_OR,          // or 
-                token_value::TV_CASE,        // case
                 token_value::TV_LET,         // let 
-                token_value::TV_LET_SATR,    // let* 
-                token_value::TV_LETREC,      // letrec 
-                token_value::TV_DO,          // do 
-                token_value::TV_DELAY,       // delay 
-                token_value::TV_QUASIQUTO,   // quasiquote
-                token_value::TV_IS,          // => 
                 token_value::TV_DEFINE,      // define 
-                token_value::TV_UNQUOTE,     // unquote 
-                token_value::TV_UNQUOTE_SPLICING,    // unquote-splicing
             };
 
-            const char *name[] = {
-                "if", "else", "lambda", "set!", "begin",
-                "cond", "and", "or", "case", "let", "let*",
-                "letrec", "do", "delay", "quasiquote", "=>",
-                "define", "unquote", "unquote-splicing"
-            };
+            const char *name[] = { "if", "lambda", "set!", "begin", "let", "define" };
             int length = sizeof(token) / sizeof(char*);//std::end(token) - std::begin(token);
             for (int i = 0; i < length; ++i)
             {
@@ -87,6 +68,7 @@ namespace scheme
             }
             return this->token_pool.front();
         }
+
         token lexer::get()
         {
             if (this->token_pool.size() > 1)
@@ -100,16 +82,7 @@ namespace scheme
                 return this->get_next();
             }
         }
-        token lexer::make_token(int real, int comp)
-        {
-            token tok;
-            tok.kind = token_kind::TK_COMPLEX;
-            tok.value.complex.real = real;
-            tok.value.complex.comp = comp;
-            tok.line = this->line;
-            tok.col = this->col;
-            return tok;
-        }
+        
         token lexer::make_token(token_kind k)
         {
             token tok;
@@ -118,6 +91,7 @@ namespace scheme
             tok.col = this->col;
             return tok;
         }
+
         token lexer::make_token(char c)
         {
             token tok;
@@ -127,6 +101,7 @@ namespace scheme
             tok.col = this->col;
             return tok;
         }
+
         token lexer::make_token(bool s)
         {
             token tok;
@@ -136,6 +111,7 @@ namespace scheme
             tok.val = s ? token_value::TV_TRUE : token_value::TV_FALSE;
             return tok;
         }
+
         token lexer::make_token(const char * str, int len)
         {
             const char *tmp = util::identi_table::instance().insert(str, len);
@@ -149,6 +125,7 @@ namespace scheme
             tok.value.string.len = len;
             return tok;
         }
+
         token lexer::make_token(int num)
         {
             token tok;
@@ -158,15 +135,17 @@ namespace scheme
             tok.value.num = num;
             return tok;
         }
+
         token lexer::make_token(float fnum)
         {
             token tok;
-            //tok.kind = token_kind::TK_REAL;
+            tok.kind = token_kind::TK_REAL;
             tok.line = this->line;
             tok.col = this->col;
             tok.value.fnum = fnum;
             return tok;
         }
+
         token lexer::get_char()
         {
             char ch = this->in.getc();
@@ -174,6 +153,7 @@ namespace scheme
                 return make_token(ch);
             throw std::runtime_error(std::string("invalid sharp-sign prefix #") + ch);
         }
+
         token lexer::get_next()
         {
             char ch;
@@ -185,30 +165,15 @@ namespace scheme
                     else 
                         ++this->col; 
                     continue;
-                case '`':
-                    return make_token(token_kind::TK_BACKTICKS);
                 case '(':
                     return make_token(token_kind::TK_LPAREN);
                 case ')':                    
                     return make_token(token_kind::TK_RPAREN);
                 case '\'':
                     return make_token(token_kind::TK_QUOTE);
-                case ',':
-                    ch = this->in.getc();
-                    if (ch == '@')
-                    {
-                        return make_token(token_kind::TK_COMMA_AT);
-                    }
-                    else
-                    {
-                        this->in.ungetc(ch);
-                        return make_token(token_kind::TK_COMMA);
-                    }
                 case '+':
                 case '-':
                     return get_peculiar_identifier(ch);
-                case '.':
-                    return get_dot();
                 case ';':
                     skip_comment(); continue;
                 case '"':
@@ -253,7 +218,7 @@ namespace scheme
 
         int lexer::to_number(char ch)
         {
-            if (std::isalpha(ch))
+            if (std::isxdigit(ch))
                 return ch - 'a' + 10;
             else
                 return ch - '0';
@@ -267,15 +232,11 @@ namespace scheme
 
             while (std::isxdigit(ch))
             {
-                if (('0' >= ch || '0' + radix <= ch))
+                int v = to_number(ch);
+                if (0 > v || radix <= v)
                     throw std::runtime_error(std::string("error radix character: ") + ch);
                 value *= radix;
-                value += to_number(ch);
-                ch = this->in.getc();
-            }
-            while (ch == '#')
-            {
-                value *= radix;
+                value += v;
                 ch = this->in.getc();
             }
             return value;
@@ -311,79 +272,27 @@ namespace scheme
             }
             // complex
             int value = 0, suffix = 0;
-            bool sign = true, connect = true, is_complex = false;
+            bool sign = true;
 
             {
                 if (ch == '+' || ch == '-')
                 {
                     sign = '+' == ch;
                     ch = this->in.getc();
-                    if (ch == 'i')
-                    {
-                        is_complex = true;
-                        connect = sign;
-                        suffix = 1;
-                        value = 0;
-                        goto label_end;
-                    }
                 }
                 value = get_real(radix, ch);
-                if (ch == '@')
+                if (ch == '.')
                 {
                     suffix = get_real(radix, ch);
-                    // todo
+                    float s = suffix;
+                    while (s >= 1)
+                        s /= 10;
+                    s += value;
+                    s *= sign ? 1 : -1;
+                    return make_token(s);
                 }
-                else if (ch == '+' || ch == '-')
-                {
-                    is_complex = true;
-                    connect = '+' == ch;
-                    this->in.getc();
-                    suffix = get_real(radix, ch);
-                }
-                else if (ch == '.')
-                {
-                    // todo
-                }
-                else
-                {
-                    goto label_end;
-                }
+                return make_token(value * (sign ? 1 : -1));
             }
-
-        label_end:
-            if (is_complex)
-            {
-                return make_token(value, suffix);
-            }
-            else
-            {
-                return make_token(value);
-            }
-            
-        }
-
-        token lexer::get_dot() 
-        {
-            char ch = this->in.getc();
-            if (is_delimiter(ch))
-                return make_token(token_kind::TK_DOT);
-
-            //ch = this->in.getc();
-            if (ch == '.') {
-                ch = this->in.getc();
-                if (ch == '.') {
-                    ch = this->in.getc();
-                    this->in.ungetc(ch);
-                    if (is_delimiter(ch))
-                        return make_token("...", 3);
-                }
-            }
-            else
-            {
-                this->in.ungetc(ch);
-                return get_number('.');
-            }
-            throw std::runtime_error("invalid token starting with .");
         }
 
         void lexer::skip_comment(void) 
@@ -445,8 +354,6 @@ namespace scheme
             char ch = this->in.getc();
             switch (ch) 
             {
-            case '(':
-                return make_token(token_kind::TK_DONT_KNOW);
             case 't':
                 ch = this->in.getc();
                 this->in.ungetc(ch);
@@ -496,9 +403,7 @@ namespace scheme
         bool lexer::is_subsequent(char ch)
         {
             if (std::isdigit(ch) || ch == '+' || ch == '-' || ch == '.' || ch == '@')
-            {
                 return true;
-            }
             return is_initial(ch);
         }
 

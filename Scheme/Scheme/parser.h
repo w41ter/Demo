@@ -24,6 +24,8 @@ namespace scheme
             ast_node *parser_lambda();
             ast_node *parser_if();
             ast_node *parser_set();
+            ast_node *parser_begin();
+            ast_node *parser_define();
 
             void advance();
             void match(lexer::token_kind kind);

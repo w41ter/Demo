@@ -15,17 +15,11 @@ namespace scheme
             TK_CHAR,
             TK_BOOL,
             TK_STRING,
-            TK_COMPLEX,
             TK_REAL,
             TK_NUMBER,      
             TK_LPAREN,      // (
             TK_RPAREN,      // )
-            TK_DOT,         // .
-            TK_COMMA,       // ,
-            TK_COMMA_AT,    // ,@
-            TK_BACKTICKS,   // `
             TK_QUOTE,       // '
-            TK_DONT_KNOW,   // #(
             TK_KEYWORD,
             TK_END,
         };
@@ -40,25 +34,11 @@ namespace scheme
 
             // keyword
             TV_IF,          // if
-            TV_ELSE,        // else
-            TV_QUOTE,       // quote
             TV_LAMBDA,      // lambda
             TV_SET,         // set!
             TV_BEGIN,       // begin 
-            TV_COND,        // cond 
-            TV_AND,         // and 
-            TV_OR,          // or 
-            TV_CASE,        // case
             TV_LET,         // let 
-            TV_LET_SATR,    // let* 
-            TV_LETREC,      // letrec 
-            TV_DO,          // do 
-            TV_DELAY,       // delay 
-            TV_QUASIQUTO,   // quasiquote
-            TV_IS,          // => 
             TV_DEFINE,      // define 
-            TV_UNQUOTE,     // unquote 
-            TV_UNQUOTE_SPLICING,    // unquote-splicing
         };
 
         struct token
@@ -70,10 +50,6 @@ namespace scheme
                 char c;
                 int num;
                 float fnum;
-                struct {
-                    int real;
-                    int comp;
-                } complex;
                 struct {
                     const char *str;
                     int len;
@@ -92,7 +68,6 @@ namespace scheme
             token get();
 
         protected:
-            token make_token(int real, int comp);
             token make_token(token_kind k);
             token make_token(char c);
             token make_token(bool s);
@@ -105,7 +80,6 @@ namespace scheme
             token get_identifier(char ch);
             token get_peculiar_identifier(char ch);
             token get_number(char ch);
-            token get_dot();
             token get_pound_special();
             token get_string();
 

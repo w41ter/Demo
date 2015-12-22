@@ -18,13 +18,20 @@ namespace scheme
             switch (this->token.kind)
             {
             case token_kind::TK_ID:
-                return new ast::ast_variable(this->token.value.string.str);
+            {
+                auto var = this->token.value.string.str;
+                advance();
+                return new ast::ast_variable(var);
+            }
             case token_kind::TK_CHAR:
             case token_kind::TK_STRING:
             case token_kind::TK_NUMBER:
             case token_kind::TK_REAL:
-            case token_kind::TK_COMPLEX:
-                return new ast::ast_literal(this->token);
+            {
+                auto tok = token;
+                advance();
+                return new ast::ast_literal(tok);
+            }
             case token_kind::TK_LPAREN:
             {
                 advance();
@@ -36,16 +43,20 @@ namespace scheme
                 }
                 else if (this->token.kind == token_kind::TK_RPAREN)
                 {
-                    return new ast::ast_literal(this->token);
+                    auto tok = token;
+                    advance();
+                    return new ast::ast_literal(tok);
                 }
                 else
                 {
                     auto node = new ast::ast_proceduce_call();
+                    node->push_function(parser_sexpr());
                     while (this->token.kind != token_kind::TK_RPAREN)
                     {
                         node->push_back(parser_sexpr());
                         advance();
                     }
+                    advance();
                     return node;
                 }
             }
@@ -53,6 +64,7 @@ namespace scheme
                 throw std::runtime_error("error");
             }
         }
+
         ast_node * parser::parser_keyword()
         {
             using lexer::token_kind;
@@ -66,10 +78,61 @@ namespace scheme
                 return parser_if();
             case token_value::TV_SET:
                 return parser_set();
+            case token_value::TV_BEGIN:
+                return parser_begin();
+            case token_value::TV_DEFINE:
+                return parser_define();
             default:
+                // todo
                 break;
             }
         }
+
+        ast_node * parser::parser_define()
+        {
+            using lexer::token_kind;
+
+            advance();
+            if (token.kind == token_kind::TK_LPAREN) 
+            {
+                auto node = new ast::ast_define_function();
+                advance();
+                if (token.kind != token_kind::TK_ID)
+                {
+                    // error
+                }
+                node->push_name(token.value.string.str);
+                advance();
+                while (token.kind == token_kind::TK_ID)
+                {
+                    node->push_param(token.value.string.str);
+                    advance();
+                }
+                advance();
+                node->push_body(parser_body());
+                match(token_kind::TK_RPAREN);
+                return node;
+            } 
+            else if (token.kind == token_kind::TK_ID)
+            {
+                auto node = new ast::ast_define_variable();
+                node->push_var(token.value.string.str);
+                node->push_expr(parser_expr());
+                match(token_kind::TK_RPAREN);
+                return node;
+            }
+        }
+
+        ast_node * parser::parser_begin()
+        {
+            advance();
+            auto node = new ast::ast_begin();
+            do {
+                node->push_back(parser_sexpr());
+            } while (token.kind != lexer::token_kind::TK_RPAREN);
+            return node;
+        }
+
         ast_node * parser::parser_lambda()
         {
             using lexer::token_kind;
@@ -85,22 +148,7 @@ namespace scheme
                     node->push_argument(new ast::ast_variable(token.value.string.str));
                     advance();
                 }
-                if (token.kind == token_kind::TK_DOT)
-                {
-                    advance();
-                    if (token_kind::TK_ID != token.kind)
-                    {
-                        throw std::runtime_error("need var");
-                    }
-                    node->push_formal(new ast::ast_variable(token.value.string.str));
-                    advance();
-                }
                 match(token_kind::TK_RPAREN);
-            }
-            else if (token_kind::TK_ID == token.kind)
-            {
-                node->push_formal(new ast::ast_variable(this->token.value.string.str));
-                advance();
             }
             else
             {
@@ -110,6 +158,7 @@ namespace scheme
             match(token_kind::TK_RPAREN);
             return node;
         }
+
         ast_node * parser::parser_if()
         {
             advance();
@@ -121,6 +170,7 @@ namespace scheme
             match(lexer::token_kind::TK_RPAREN);
             return if_;
         }
+
         ast_node * parser::parser_set()
         {
             advance();
@@ -130,16 +180,24 @@ namespace scheme
             set->push_var(new ast::ast_variable(token.value.string.str));
             advance();
             set->push_expr(parser_expr());
+            match(lexer::token_kind::TK_RPAREN);
+            return set;
         }
 
         ast_node * parser::parser_body()
         {
-            return nullptr;
+            auto node = new ast::ast_body();
+            do {
+                node->push_expr(parser_sexpr());
+            } while (token.kind != lexer::token_kind::TK_RPAREN);
+            return node;
         }
+
         void parser::advance()
         {
             this->token = this->lexer.get();
         }
+
         void parser::match(lexer::token_kind kind)
         {
             if (this->token.kind == kind)
