@@ -1,3 +1,6 @@
+#define TEST_MAIN
+#include "UnitTest.h"
+
 #include <string>
 #include <assert.h>
 
@@ -28,13 +31,13 @@ protected:
     string::iterator position;
 };
 
-#define Except(k) \
-do { \
-    assert(tok.kind == k);  \
-    tok = lex.get();        \
+#define Except(k)               \
+do {                            \
+    TEST_CHECK(tok.kind == k);  \
+    tok = lex.get();            \
 } while (0)     
 
-int main() {
+TEST_CASE(testLexer) {
     const char *data = "\
         ((let var b))   \
         #()'`,,@. + - ...\
@@ -60,5 +63,4 @@ int main() {
     Except(token_kind::TK_ID);
     Except(token_kind::TK_ID);
     Except(token_kind::TK_ID);
-    return 0;
 }
