@@ -19,7 +19,7 @@ namespace scheme
             TK_NUMBER,      
             TK_LPAREN,      // (
             TK_RPAREN,      // )
-            TK_QUOTE,       // '
+            //TK_QUOTE,       // '
             TK_KEYWORD,
             TK_END,
         };
@@ -37,7 +37,7 @@ namespace scheme
             TV_LAMBDA,      // lambda
             TV_SET,         // set!
             TV_BEGIN,       // begin 
-            TV_LET,         // let 
+            //TV_LET,         // let 
             TV_DEFINE,      // define 
         };
 
@@ -89,7 +89,7 @@ namespace scheme
             bool is_subsequent(char ch);
 
             int to_number(char ch);
-            int get_real(int radix, char ch);
+            int get_real(int radix, char &ch);
 
             void skip_comment(void);
         protected:

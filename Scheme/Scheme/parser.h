@@ -13,14 +13,14 @@ namespace scheme
         class parser
         {
         public:
-            parser(lexer::lexer &l) : lexer(l) {}
+            parser(lexer::lexer &&l) : lexer(std::move(l)), is_end(false) { advance(); }
 
             ast_node *parser_expr();
 
         protected:
             ast_node *parser_sexpr();
             ast_node *parser_keyword();
-            ast_node *parser_body();
+            ast::ast_body *parser_body();
             ast_node *parser_lambda();
             ast_node *parser_if();
             ast_node *parser_set();
@@ -28,11 +28,12 @@ namespace scheme
             ast_node *parser_define();
 
             void advance();
-            void match(lexer::token_kind kind);
+            void match(lexer::token_kind kind, const char *msg);
 
         protected:
-            lexer::lexer lexer;
+            lexer::lexer &&lexer;
             lexer::token token;
+            bool is_end;
         };
     }
 }

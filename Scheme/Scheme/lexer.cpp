@@ -3,6 +3,7 @@
 #include <map>
 #include <assert.h>
 #include <cstring>
+#include <iostream>
 
 #include "string_table.h"
 #include "lexer.h"
@@ -27,20 +28,17 @@ namespace scheme
                 token_value::TV_LAMBDA,      // lambda
                 token_value::TV_SET,         // set!
                 token_value::TV_BEGIN,       // begin 
-                token_value::TV_LET,         // let 
+                //token_value::TV_LET,         // let 
                 token_value::TV_DEFINE,      // define 
             };
 
-            const char *name[] = { "if", "lambda", "set!", "begin", "let", "define" };
-            int length = sizeof(token) / sizeof(char*);//std::end(token) - std::begin(token);
+            const char *(name[]) = { "if", "lambda", "set!", "begin", "define" };
+            int length = sizeof(name) / sizeof(char*);//std::end(token) - std::begin(token);
             for (int i = 0; i < length; ++i)
             {
-                table::instance();
-                const char *t = name[i];
-                int a = strlen(name[i]);
                 const char *tmp = table::instance().insert(name[i], strlen(name[i]));
-                keyword[tmp] =
-                    token[i];
+                keyword[tmp] = token[i];
+                //std::cout << tmp << " is keyword " << std::endl;
             }
         }
 
@@ -49,8 +47,10 @@ namespace scheme
             auto &keyword = keywords();
             if (keyword.count(addr) != 0)
             {
+                //std::cout << addr << " is keyword" << std::endl;
                 return keyword[addr];
             }
+            //std::cout << addr << " isn't keyword" << std::endl;
             return token_value::TV_VAR;
         }
 
@@ -138,6 +138,7 @@ namespace scheme
 
         token lexer::make_token(float fnum)
         {
+            //std::cout << fnum << " be found" << std::endl;
             token tok;
             tok.kind = token_kind::TK_REAL;
             tok.line = this->line;
@@ -169,8 +170,8 @@ namespace scheme
                     return make_token(token_kind::TK_LPAREN);
                 case ')':                    
                     return make_token(token_kind::TK_RPAREN);
-                case '\'':
-                    return make_token(token_kind::TK_QUOTE);
+                //case '\'':
+                //    return make_token(token_kind::TK_QUOTE);
                 case '+':
                 case '-':
                     return get_peculiar_identifier(ch);
@@ -218,16 +219,16 @@ namespace scheme
 
         int lexer::to_number(char ch)
         {
-            if (std::isxdigit(ch))
-                return ch - 'a' + 10;
-            else
+            if (std::isdigit(ch))
                 return ch - '0';
+            else
+                return ch - 'a' + 10;
         }
 
-        int lexer::get_real(int radix, char ch)
+        int lexer::get_real(int radix, char &ch)
         {
             int value = 0;
-            if (std::isdigit(ch))
+            if (!std::isxdigit(ch))
                 throw std::runtime_error("need number");
 
             while (std::isxdigit(ch))
@@ -283,6 +284,7 @@ namespace scheme
                 value = get_real(radix, ch);
                 if (ch == '.')
                 {
+                    ch = this->in.getc();
                     suffix = get_real(radix, ch);
                     float s = suffix;
                     while (s >= 1)
@@ -291,6 +293,8 @@ namespace scheme
                     s *= sign ? 1 : -1;
                     return make_token(s);
                 }
+                //std::cout << ch << std::endl;
+                //std::cout << value << std::endl;
                 return make_token(value * (sign ? 1 : -1));
             }
         }
@@ -339,7 +343,7 @@ namespace scheme
                     break;
                 str += ch;
             }
-            
+            //std::cout << " found string " << str << std::endl;
             token tok;
             tok.kind = token_kind::TK_STRING;
             tok.line = this->line;
@@ -365,7 +369,7 @@ namespace scheme
                 this->in.ungetc(ch);
                 if (!is_delimiter(ch))
                     throw std::runtime_error(std::string("invalid special #f" + ch));
-                return make_token(true);
+                return make_token(false);
             case 'b':
             case 'o':
             case 'd':

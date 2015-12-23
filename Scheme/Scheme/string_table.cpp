@@ -30,6 +30,7 @@ namespace scheme
                 delete []i;
             }
         }
+
         const char * string_table::insert(const char * str, int len)
         {
             char *string = new char[len + 1];
@@ -38,11 +39,13 @@ namespace scheme
             this->table.push_back(string);
             return string;
         }
+
         string_table & string_table::instance()
         {
             static string_table table;
             return table;
         }
+
         identi_table::~identi_table()
         {
             for (auto &i : this->table)
@@ -58,6 +61,7 @@ namespace scheme
                 i.second = nullptr;
             }
         }
+
         const char * identi_table::insert(const char * str, int len)
         {
             unsigned int index = ELFHash(str, len) % this->hash_mod;

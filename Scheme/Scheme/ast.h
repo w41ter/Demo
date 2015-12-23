@@ -46,7 +46,7 @@ namespace scheme
         {
         public:
             ast_literal(lexer::token tok) : token(tok) {}
-
+            lexer::token get_token() const { return token; }
             virtual void accept(ast_visitor &v) override { v.visit(*this); }
         protected:
             lexer::token token;
@@ -92,12 +92,14 @@ namespace scheme
             ast_lambda() {}
 
             void push_argument(ast_variable *v) { arguments.push_back(v); }
-            void push_body(ast_node *node) { body = node; }
+            void push_body(ast_body *node) { body = node; }
 
+            std::vector<ast_variable*> &get_arguments() { return arguments; }
+            ast_body *get_body() const { return body; }
             virtual void accept(ast_visitor &v) override { v.visit(*this); }
         protected:
             std::vector<ast_variable*> arguments;
-            ast_node *body;
+            ast_body *body;
         };
 
         class ast_assignment : public ast_node
@@ -106,7 +108,8 @@ namespace scheme
             ast_assignment() {}
             void push_var(ast_variable *v) { var = v; }
             void push_expr(ast_node *node) { expr = node; }
-
+            ast_variable *get_variable() const { return var; }
+            ast_node *get_expr() const { return expr; }
             virtual void accept(ast_visitor &v) override { v.visit(*this); }
         protected:
             ast_variable *var;
@@ -130,6 +133,7 @@ namespace scheme
             ast_begin() = default;
 
             void push_back(ast_node *node) { this->exprs.push_back(node); }
+            std::vector<ast_node*> &get_exprs() { return exprs; }
             virtual void accept(ast_visitor &v) override { v.visit(*this); }
         protected:
             std::vector<ast_node*> exprs;
@@ -142,7 +146,8 @@ namespace scheme
 
             void push_var(const char *v) { var = v; }
             void push_expr(ast_node *node) { expr = node; }
-
+            const char *get_variable() const { return var; }
+            ast_node *get_expr() const { return expr; }
             virtual void accept(ast_visitor &v) { v.visit(*this); }
         protected:
             const char *var;
@@ -157,7 +162,9 @@ namespace scheme
             void push_name(const char *n) { name = n; }
             void push_param(const char *p) { param.push_back(p); }
             void push_body(ast_node *b) { body = b; }
-
+            const char *get_name() const { return name; }
+            std::vector<const char*> &get_params() { return param; }
+            ast_node *get_body() const { return body; }
             virtual void accept(ast_visitor &v) override { v.visit(*this); }
         protected:
             const char *name;
@@ -170,6 +177,7 @@ namespace scheme
         public:
             ast_body() = default;
             void push_expr(ast_node *expr) { exprs.push_back(expr); }
+            std::vector<ast_node*> get_exprs() { return exprs; }
             virtual void accept(ast_visitor &v) override { v.visit(*this); }
         protected:
             std::vector<ast_node *> exprs;

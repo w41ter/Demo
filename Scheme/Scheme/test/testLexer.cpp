@@ -39,8 +39,9 @@ do {                            \
 
 TEST_CASE(testLexer) {
     const char *data = "\
-        ((let var b))   \
-        ()' + - \
+        ((define var b))   \
+        () + - \
+        #f #t \"sgttr\" 12 0.2 #\\b \
     ";
     string_input in(data);
     lexer lex(in);
@@ -54,8 +55,13 @@ TEST_CASE(testLexer) {
     Except(token_kind::TK_RPAREN);
     Except(token_kind::TK_RPAREN);
     Except(token_kind::TK_LPAREN);
-    Except(token_kind::TK_RPAREN);    
-    Except(token_kind::TK_QUOTE);
+    Except(token_kind::TK_RPAREN);
     Except(token_kind::TK_ID);
     Except(token_kind::TK_ID);
+    Except(token_kind::TK_BOOL);
+    Except(token_kind::TK_BOOL);
+    Except(token_kind::TK_STRING);
+    Except(token_kind::TK_NUMBER);
+    Except(token_kind::TK_REAL);
+    Except(token_kind::TK_CHAR);
 }
