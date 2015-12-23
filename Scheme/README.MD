@@ -1,4 +1,4 @@
 # Scheme
 
-scheme interp use c++.
+scheme like parser use c++.
 
