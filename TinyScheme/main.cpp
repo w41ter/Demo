@@ -208,13 +208,17 @@ enum class Type {
     TYPE_STRING = 1,
 };
 
-// common property of heap object, gcMark_ for garbage collector 
+// common property of heap object
 // obType_ is the type of object
 #define HEAP_OBJECT_HEAD    \
-    int8_t gcMark_;         \
     int8_t obType_;         \
     int8_t resv1_;          \
-    int8_t resv2_         
+    int8_t resv2_;          \
+    int8_t resv3_
+
+typedef struct {
+    HEAP_OBJECT_HEAD;
+} CommonType;
 
 typedef struct {
     HEAP_OBJECT_HEAD;
@@ -224,11 +228,10 @@ typedef struct {
 // make pair from alloced memory.
 Pointer MakePair(Pointer self, Pointer car, Pointer cdr)
 {
-    ((Pair *)self)->gcMark_ = 0;
     ((Pair *)self)->obType_ = (int8_t)Type::TYPE_PAIR;
     ((Pair *)self)->car = car;
     ((Pair *)self)->cdr = cdr;
-    return (self & (Pointer)Tag::TAG_NOT);
+    return self;
 }
 
 bool IsPair(Pointer p)
@@ -246,23 +249,76 @@ Pointer *Cdr(Pointer self)
     return &((Pair *)self)->cdr;
 }
 
+typedef struct
+{
+    HEAP_OBJECT_HEAD;
+    size_t length_;
+    char str_[];
+} String;
+
+/* make string from exist str and memory. */
+Pointer MakeString(Pointer self, const char *from, size_t length)
+{
+    ((String *)self)->obType_ = (Pointer)Type::TYPE_STRING;
+    ((String *)self)->length_ = length;
+    strncpy(((String *)self)->str_, from, length);
+    return 0;
+}
+
+bool IsString(Pointer p)
+{
+    return (!IsTagging(p) || ((String *)p)->obType_ == (Pointer)Type::TYPE_STRING);
+}
+
+const char *GetString(Pointer p)
+{
+    return ((String *)p)->str_;
+}
+
 /* end of runtime */
 
 /* garbage collector */
 
-typedef void*(*Alloc)(size_t);
-typedef void*(*Realloc)(void *, size_t);
-typedef void(*Free)(void *);
+
 
 namespace GC
 {
     struct Scheme;
+
+    typedef void*(*Alloc)(size_t);
+    typedef void*(*Realloc)(void *, size_t);
+    typedef void(*Free)(void *);
+    typedef size_t(*SizeOfObject)(void *);
+    typedef void(*ProcessReference_)(Scheme*, Pointer*);
+    typedef void(*GlobalVariables)(Scheme*, ProcessReference_);
+    typedef void(*VariablesUse)(Scheme*, Pointer*, ProcessReference_);
 
     struct Semispace 
     {
         Pointer _bottom;
         Pointer _top;
         Pointer _end;
+    };
+
+
+    struct Scheme
+    {
+        Alloc malloc;
+        Free free;
+        SizeOfObject size_of_object;
+        GlobalVariables global_variables;
+        VariablesUse variable_use;
+
+        struct
+        {
+            Semispace *_from_space;
+            Semispace *_to_space;
+            size_t size;
+            size_t space_size;
+            intptr_t forward;
+        };
+
+        map<const char*, Pointer> global_variable;
     };
 
     /* 方便GC */
@@ -307,22 +363,7 @@ namespace GC
         space->_top = space->_bottom;
     }
 
-    struct Scheme 
-    {
-        Alloc malloc;
-        Free free;
-
-        struct 
-        {
-            Semispace *_from_space;
-            Semispace *_to_space;
-            size_t size;
-            size_t space_size;
-            intptr_t forward;
-        };
-
-        map<const char*, Pointer> global_variable;
-    };
+    /* end of semispace */
 
     void InitSchemeAllocate(Scheme *scheme, size_t size) 
     {
@@ -386,14 +427,12 @@ namespace GC
         return dest;
     }
 
-    void ProcessTaggingReference(Scheme *scheme, Pointer *slot)
-    {
-
-    }
-
     void ProcessReference(Scheme *scheme, Pointer *slot) 
     {
-        size_t size = SizeOfObject(*slot);
+        size_t size = scheme->size_of_object((void*)*slot);
+        if (size <= 0)
+            return;
+
         Pointer obj = *slot;
         if (obj == NULL) return;
 
@@ -404,9 +443,6 @@ namespace GC
                 Pointer new_obj = Swap(scheme, obj, size);
                 ForwardTo(scheme, obj, new_obj);
                 *slot = new_obj;
-
-                if (!IsTagging(obj)) 
-                    ProcessTaggingReference(scheme, slot);
             }
             else 
             {
@@ -415,7 +451,12 @@ namespace GC
         }
     }
 
-    void GarbageCollect(Scheme *scheme, Pointer *address) 
+    void ProcessObjectReference(Scheme *scheme, Pointer *slot)
+    {
+        scheme->variable_use(scheme, slot, ProcessReference);
+    }
+
+    void GarbageCollect(Scheme *scheme) 
     {
         scheme->forward = (Pointer)scheme->malloc(Ceil(scheme->space_size));
         memset((void*)scheme->forward, 0, Ceil(scheme->space_size));
@@ -423,18 +464,15 @@ namespace GC
         // queue
         Pointer scanned = scheme->_to_space->_bottom;
 
-        for (int i = 0; i < 9; ++i) 
-        {
-            cout << ((int*)scheme->forward)[i] << endl;
-            ProcessReference(scheme, &address[i]);
-        }
+        // copy all glboal variables
+        scheme->global_variables(scheme, ProcessReference);
 
         // breadth-first scanning of object graph
         while (scanned < scheme->_to_space->_top) 
         {
             Pointer parent_obj = scanned;
-            ProcessReference(scheme, &parent_obj);
-            scanned += SizeOfObject(parent_obj);
+            ProcessObjectReference(scheme, &parent_obj);
+            scanned += scheme->size_of_object((void*)parent_obj);
         }
 
         // Now all live objects will have been evacuated into the to-space,
@@ -450,7 +488,7 @@ namespace GC
         Pointer address = AllocateMemory(scheme->_from_space, size);
         if (address == NULL) 
         {
-            //GarbageCollect(scheme);
+            GarbageCollect(scheme);
             address = AllocateMemory(scheme->_from_space, size);
             if (address == NULL) 
             {
@@ -467,6 +505,7 @@ namespace GC
         }
     }
 }
+
 /* end of garbage collect */
 
 /* begin visual machine */
@@ -526,9 +565,9 @@ namespace VM
         CallStack *global_stacks;
         CallStack *cur_stacks;
 
-        Alloc malloc;
-        Realloc realloc;
-        Free free;
+        GC::Alloc malloc;
+        GC::Realloc realloc;
+        GC::Free free;
     };
 
     void InitVMstate(VMstate *vm) {
@@ -722,299 +761,49 @@ namespace VM
     }
 
 }
+
 /* end visual machine */
 
-int test_gc() {
-    Scheme scheme;
-    scheme.malloc = malloc;
-    scheme.free = free;
-    InitSchemeAllocate(&scheme, sizeof(Pointer) * 1024);
-
-    const char * buff[] = {
-        "1", "2", "3", "4", "5", "6",
-        "7", "8", "9", "10"
-    };
-    Pointer address[10];
-    for (int i = 0; i < 10; ++i) {
-        address[i] = Allocate(&scheme, sizeof(Pointer));
-    }
-
-    for (int i = 0; i < 10; ++i) {
-        Pointer ptr = address[i];
-        *((int*)ptr) = i;
-    }
-
-    for (int i = 0; i < 10; ++i) {
-        Pointer ptr = address[i];
-        cout << buff[i] << " address is " << ptr << " , var is " << *((int*)ptr) << endl;
-    }
-        
-    cout << "\n\nBegin GC" << endl;
-
-    GarbageCollect(&scheme, &address[1]);
-    for (int i = 0; i < 10; ++i) {
-        Pointer ptr = address[i];
-        cout << buff[i] << " address is " << ptr << " , var is " << *((int*)ptr) << endl;
-    }
-
-    DestroySchemeAllocate(&scheme);
-    return 0;
-}
-
-void test_vm() {
-    char *str[] = {
-        "vara",
-        "varb",
-        "varc",
-    };
-    VMstate state;
-    state.malloc = malloc;
-    state.realloc = realloc;
-    state.free = free;
-    InitVMstate(&state);
-    /* A + B = C */
-    state.instructions[0] = { OP_INSERT, NULL };
-    state.instructions[1] = { OP_STORE, (Pointer)"vara" };
-    state.instructions[2] = { OP_INSERT, NULL };
-    state.instructions[3] = { OP_STORE, (Pointer)"varb" };
-    state.instructions[4] = { OP_LOAD, (Pointer)"vara" };
-    state.instructions[5] = { OP_LOAD, (Pointer)"varb" };
-    state.instructions[6] = { OP_PUSH, 10 };
-    state.instructions[7] = { OP_CALL, 2 };
-    state.instructions[8] = { OP_SHOW, NULL };
-    state.instructions[9] = { OP_SHUTDOWN, NULL };
-
-    // FUNCTION
-    state.instructions[10] = { OP_GET, 0 };
-    state.instructions[11] = { OP_GET, 1 };
-    state.instructions[11] = { OP_ADD, NULL };
-    state.instructions[12] = { OP_RET, NULL };
-    Run(&state);
-    DestoryVMstate(&state);
-}
-//
-
-struct Object
+struct Scope 
 {
-    virtual ~Object() = 0 {}
-    virtual string ToString() = 0;
-    virtual bool ToBool() = 0;
-    virtual long ToInt() = 0;
-};
+    Scope *parent_;
+    map<const char*, Pointer> records_;
 
-struct Number : public Object 
-{
-    virtual ~Number() {}
-    long value;
-    Number(long value) : value(value) {}
+    Scope(Scope *parent = nullptr) : parent_(parent) {}
 
-    virtual string ToString() 
+    Pointer Lookup(const char *record)
     {
-        stringstream strs;
-        strs << value;
-        string str;
-        strs >> str;
-        return str;
-    }
-
-    virtual bool ToBool() { return value; }
-    virtual long ToInt() { return value; };
-};
-
-struct String : public Object
-{
-    virtual ~String() {}
-    const char *value;
-    
-    virtual string ToString() { return value; };
-    virtual bool ToBool() { return true; }
-    virtual long ToInt() { return 0; };
-};
-
-struct Bool : public Object
-{   
-    virtual ~Bool() {}
-    bool value;
-    virtual string ToString() { return value ? "True" : "False"; }
-    virtual bool ToBool() { return value; }
-    virtual long ToInt() { return value ? 1 : 0; };
-};
-
-struct List : public Object
-{
-    virtual ~List() {}
-
-    list<Object*> value;
-
-    virtual string ToString()
-    {
-        string tmp = "(list";
-        for (auto i : value)
+        if (records_.count(record) == 0)
         {
-            tmp += " " + i->ToString();
+            if (parent_ != nullptr)
+                return parent_->Lookup(record);
+            else
+                return (Pointer)nullptr;
         }
-        tmp += ")";
-        return tmp;
+        else
+        {
+            return records_[record];
+        }
     }
 
-    virtual bool ToBool() { return 1; }
-    virtual long ToInt() { return 1 ? 1 : 0; };
+    Pointer Insert(const char *name, Pointer addr)
+    {
+        if (records_.count(name) != 0)
+            throw std::runtime_error(string(name) + " redefined!");
+        records_[name] = addr;
+        return addr;
+    }
 };
 
-struct Scope;
-
-using BuildInFunction = function<Pointer(vector<Pointer>&, Scope*)>;
-
-struct Scope
+struct Expression 
 {
-    Scope *parent;
-    map<string, Pointer> variableTable;
-
-    static vector<void*> gc;
-    static map<string, BuildInFunction> builtinFunctions;
-
-    static map<string, BuildInFunction> &BuildIn(string name, BuildInFunction func) {
-        builtinFunctions.insert(pair<string, BuildInFunction>(name, func));
-        return builtinFunctions;
-    }
-
-    static void GC() {
-        for (auto i : gc) {
-            delete i;
-        }
-        gc.clear();
-    }
-
-    Scope(Scope *parent = nullptr) : parent(parent) {}
-
-    Pointer Find(const string &name)
-    {
-        Scope *current = this;
-        while (current != nullptr) {
-            if (current->variableTable.count(name) != 0)
-                return current->variableTable[name];
-            current = current->parent;
-        }
-        //throw name + " is not defined.";
-        return 0;
-    }
-
-    Pointer Define(const string &name, Pointer value)
-    {
-        variableTable.insert(pair<string, Pointer>(name, value));
-        return value;
-    }
-
-    Scope * SpawnScopeWith(vector<string> &names, vector<Pointer> &values) {
-        if (names.size() < values.size())
-            throw ("Too many arguments.");
-
-        Scope *scope = new Scope(this);
-        for (int i = 0; i < values.size(); i++) {
-            scope->variableTable.insert(pair<string, Pointer>(names[i], values[i]));
-        }
-        return scope;
-    }
-
-    Pointer FindInTop(string &name) {
-        if (variableTable.count(name)) {
-            return variableTable[name];
-        }
-        return 0;
-    }
-};
-
-vector<void*> Scope::gc;
-map<string, BuildInFunction> Scope::builtinFunctions;
-
-struct Expression {
     const char *value;
     Expression *parent;
     vector<Expression*> children;
 
     Expression(const char *val, Expression *parent = nullptr) : value(val), parent(parent) {}
 
-    Pointer Evaluate(Scope *scope);
-
-    string ToString()
-    {
-        if (value == "(") {
-            string res = "( ";
-            for (auto &i : children)
-            {
-                res += " " + i->ToString();
-            }
-
-            res += " )";
-            return res;
-        }
-        else {
-            return value;
-        }
-    }
-};
-
-struct Function : public Object {
-    Expression *body;
-    vector<string> parameters;
-    Scope *scope;
-
-    Function(Expression *e, vector<string> &s, Scope *sc) : body(e), parameters(s), scope(sc) {}
-
-    bool IsPartial()
-    {
-        int filledParameters = ComputeFilledParametersLength();
-        return (filledParameters < parameters.size());
-    }
-
-    Pointer Evaluate()
-    {
-        int filledParameters = ComputeFilledParametersLength();
-        if (filledParameters < parameters.size())
-            return (Pointer)this;
-        else
-            return body->Evaluate(scope);
-    }
-
-    int ComputeFilledParametersLength() {
-        int ans = 0;
-        for (auto &i : parameters)
-        {
-            if (scope->Find(i))
-                ans++;
-        }
-        return ans;
-    }
-
-    Function *Updata(vector<Pointer> arguments) {
-        vector<Pointer> ans;
-        for (auto &i : parameters)
-        {
-            auto p = scope->FindInTop(i);
-            if (p) ans.push_back(p);
-        }
-        for (auto i : arguments) {
-            ans.push_back(i);
-        }
-        Scope *newScope = scope->parent->SpawnScopeWith(parameters, ans);
-        Scope::gc.push_back(new Function(body, parameters, newScope));
-        return (Function*)Scope::gc.back();
-    }
-
-    virtual string ToString() { 
-        string ans = "(func ( ";
-        for (auto &i : parameters) {
-            ans += i;
-            auto p = scope->FindInTop(i);
-            if (p) ans += ":" + ((Object*)p)->ToString();
-            ans += " ";
-        }
-        ans += ") ";
-        ans += body->ToString();
-        return ans;
-    }
-    virtual bool ToBool() { return 1; }
-    virtual long ToInt() { return 1 ? 1 : 0; };
+    Pointer Evaluate(GC::Scheme *scheme, Scope *scope);
 };
 
 bool StringToInt(const char *str, long &i)
@@ -1027,52 +816,62 @@ bool StringToInt(const char *str, long &i)
         return 1;
 }
 
-Pointer Expression::Evaluate(Scope *scope) 
+Pointer SingleVariable(GC::Scheme *scheme, Expression *current, Scope *scope)
+{
+    long number = 0;
+    if (StringToInt(current->value, number))
+    {
+        return MakeFixnum(number);
+    }
+    else if (current->value[0] == '"')
+    {
+        size_t length = strlen(current->value);
+        Pointer pointer = GC::Allocate(scheme, sizeof(String) + length);
+        return MakeString(pointer, current->value, length);
+    }
+    else
+    {
+        Pointer obj = scope->Lookup(current->value);
+        if (!obj) throw std::runtime_error(string("没有找到") + current->value);
+        return obj;
+    }
+}
+
+Pointer Expression::Evaluate(GC::Scheme *scheme, Scope *scope) 
 {
     Expression *current = this;
     while (true) 
     {
-        if (current->children.size() == 0) 
-        {
-            long number = 0;
-            if (StringToInt(current->value, number)) 
-            {
-                return makeFixnum(number);
-            }
-            else if (current->value[0] == '"') 
-            {
-                return makeString((intptr_t)current->value);
-            }
-            else 
-            {
-                Pointer obj = scope->Find(current->value);
-                if (!obj) throw string("没有找到") + current->value;
-                return obj;
-            }
-        }
-        else 
+        if (current->children.size() != 0) 
         {
             Expression *first = current->children[0];
 
             if (first->value == StringTable::Lookup("if")) 
             {
-                bool condition = toBoolean(current->children[1]->Evaluate(scope));
-                current = condition ? current->children[2] : current->children[3];
+                Pointer boolean = current->children[1]->Evaluate(scheme, scope);
+                if (!IsBoolean(boolean))
+                    throw std::runtime_error("condition need return boolean");
+                current = GetBoolean(boolean)
+                    ? current->children[2]
+                    : current->children[3];
             }
             else if (first->value == StringTable::Lookup("let")) 
             {
-                return scope->Define(current->children[1]->value, current->children[2]->Evaluate(new Scope(scope)));
+                return scope->Insert(
+                    current->children[1]->value, 
+                    current->children[2]->Evaluate(
+                        scheme, new Scope(scope)));
             }
             else if (first->value == StringTable::Lookup("begin")) 
             {
                 Pointer result = 0;
                 for (auto i : current->children) 
                 {
-                    result = i->Evaluate(scope);
+                    result = i->Evaluate(scheme, scope);
                 }
                 return result;
             }
-            else if (first->value == StringTable::Lookup("lambda")) 
+            /*else if (first->value == StringTable::Lookup("lambda")) 
             {
                 Expression *body = current->children[2];
                 vector<string> parameters;
@@ -1084,21 +883,18 @@ Pointer Expression::Evaluate(Scope *scope)
                 Scope *newScope = new Scope(scope);
                 Scope::gc.push_back(new Function(body, parameters, newScope));
                 return (Pointer)Scope::gc.back();
-            }
+            }*/
             else if (first->value == StringTable::Lookup("list")) 
             {
-                Pointer cur;
                 Pair p;
-                cur = (Pointer)&p;
+                Pointer cur = (Pointer)&p;
                 for (int i = 1; i < current->children.size(); ++i) 
                 {
-                    *getCdr(cur) = (Pointer) new Pair;
-                    cur = *getCdr(cur);
-                    makePair(cur, current->children[i]->Evaluate(scope), 0);
-                    Scope::gc.push_back((void*)cur);
+                    *Cdr(cur) = GC::Allocate(scheme, sizeof(Pair));
+                    cur = MakePair(*Cdr(cur), current->children[i]->Evaluate(scheme, scope), 0);
                 }
-                return cur;
-            }
+                return p.cdr;
+            }/*
             else if (Scope::builtinFunctions.count(first->value)) 
             {
                 vector<Pointer> arguments;
@@ -1108,8 +904,11 @@ Pointer Expression::Evaluate(Scope *scope)
                 }
                 return Scope::builtinFunctions[first->value](arguments, scope);
             }
-            else {
-                Function *function = first->value == StringTable::Lookup("(") ? (Function*)first->Evaluate(scope) : (Function*)scope->Find(first->value);
+            else 
+            {
+                Function *function = first->value == StringTable::Lookup("(") 
+                    ? (Function*)first->Evaluate(scope) 
+                    : (Function*)scope->Find(first->value);
                 vector<Pointer> arguments;
                 for (int i = 1; i < current->children.size(); ++i) 
                 {
@@ -1125,53 +924,17 @@ Pointer Expression::Evaluate(Scope *scope)
                     current = newFunction->body;
                     scope = newFunction->scope;
                 }
-            }
+            }*/
+
+        }
+        else
+        {
+            return SingleVariable(scheme, current, scope);
         }
     }
 }
 
-void DeleteExpression(Expression *exp) 
-{
-    if (exp == nullptr) return;
-    for (auto i = exp->children.begin(); i != exp->children.end(); ++i)
-        DeleteExpression(*i);
-    delete exp;
-}
-
-//vector<string> split(const string& src, string separate_character) {
-//    vector<string> strs;
-//    int separate_characterLen = separate_character.size();
-//    int lastPosition = 0, index = -1;
-//    while (string::npos != (index = src.find(separate_character, lastPosition)))
-//    {
-//        string tmp = src.substr(lastPosition, index - lastPosition);
-//        if (!tmp.empty())
-//            strs.push_back(tmp);
-//        lastPosition = index + separate_characterLen;
-//    }
-//    string lastString = src.substr(lastPosition);
-//    if (!lastString.empty())
-//        strs.push_back(lastString);
-//    return strs;
-//}
-//
-//string replace_all(const string& str, const string& old_value, const string& new_value) {
-//    string tmp = str;
-//    string::size_type pos = 0;
-//    while (true) 
-//    {
-//        if ((pos = tmp.find(old_value, pos)) != string::npos) 
-//        {
-//            tmp.replace(pos, old_value.length(), new_value);
-//            pos += new_value.length();
-//        }
-//        else 
-//        {
-//            break;
-//        }
-//    }
-//    return tmp;
-//}
+/* tokenizer */
 
 inline bool issparater(int ch) { return isspace(ch) || ch == '(' || ch == ')'; }
 
@@ -1225,12 +988,10 @@ void Tokenizer(string &str, vector<const char*> &token)
     scan_continue: ;
     }
 }
-//
-//vector<string> Tokenizer(string &str) {
-//    str = replace_all(str, ")", " ) ");
-//    str = replace_all(str, "(", " ( ");
-//    return split(str, " ");
-//}
+
+/* end of tokenizer */
+
+/* parser */
 
 Expression *Parser(string &code) 
 {
@@ -1261,80 +1022,7 @@ Expression *Parser(string &code)
     return program;
 }
 
-void Init() {
-    const char *str[] = {
-        "(", ")", "+", "-", "*", "/", "%", "set!",
-        "list", "define", "let", "first", "append",
-        "if", "begin", "lambda", "rest", nullptr,
-    };
-    for (int i = 0; str[i] != nullptr; ++i)
-        StringTable::Insert(str[i]);
-
-    Scope::BuildIn("+", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        int ans = 0;
-        for (auto i : argument) {
-            ans += getValue(i);
-        }
-        return makeFixnum(ans);
-    });
-    Scope::BuildIn("-", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        int ans = getValue(argument[0]);
-        if (argument.size() != 1) {
-            for (int i = 1; i < argument.size(); ++i) {
-                ans -= getValue(argument[i]);
-            }
-        }
-        else
-            ans = -ans;
-        return makeFixnum(ans);
-    });
-    Scope::BuildIn("*", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        return makeFixnum(getValue(argument[0]) * getValue(argument[1]));
-    });
-    Scope::BuildIn("=", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        return makeSpec(getValue(argument[0]) == getValue(argument[1]));
-    });
-    Scope::BuildIn("and", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        return makeSpec(getValue(argument[0]) && getValue(argument[1]));
-    });
-    Scope::BuildIn("or", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        return makeSpec(getValue(argument[0]) || getValue(argument[1]));
-    });
-    Scope::BuildIn("not", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        return makeSpec(!getValue(argument[0]));
-    });
-    Scope::BuildIn("first", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        return *getCar(argument[0]);
-    });
-    Scope::BuildIn("rest", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        return *getCdr(argument[0]);
-    });
-    Scope::BuildIn("append", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        Pointer p = argument[0];
-        while (*getCdr(p)) {
-            
-        }
-        return p;
-    });
-    Scope::BuildIn("empty?", [](vector<Pointer>& argument, Scope *scope) -> Pointer {
-        return makeSpec(1);
-    });
-}
-
-void Display(Pointer val) {
-    if (isTagging(val)) {
-        if (isFixnum(val)) cout << getValue(val);
-        else if (isString(val)) cout << (const char*)getValue(val);
-        else cout << (getValue(val) ? "#t" : "#f");
-    }
-    else {
-        cout << "(";
-        Display(*getCar(val));
-        cout << " . ";
-        Display(*getCdr(val));
-        cout << ")";
-    }
-}
+/* end of parser */
 
 /*
     input port
@@ -1368,28 +1056,76 @@ protected:
     istream &input_;
 };
 
+size_t SizeOfObject(void *slot)
+{
+    Pointer self = (Pointer)slot;
+
+    // ever tagging pointer didn't nedd trans.
+    if (IsTagging(self))
+        return 0;
+
+    switch (((CommonType*)self)->obType_)
+    {
+    case (int)Type::TYPE_PAIR:
+        return sizeof(Pair);
+    case (int)Type::TYPE_STRING:
+        return sizeof(String) + ((String*)self)->length_;
+    default:
+        return 0;
+        break;
+    }
+}
+
+void GlobalVariables(GC::Scheme *scheme, GC::ProcessReference_ callback)
+{
+
+}
+
+void VariablesUse(
+    GC::Scheme *scheme, 
+    Pointer *slot, 
+    GC::ProcessReference_ callback
+    )
+{
+    if (IsTagging(*slot))
+        return;
+
+    switch (((CommonType*)*slot)->obType_)
+    {
+    case (int)Type::TYPE_PAIR:
+        callback(scheme, &((Pair*)*slot)->car);
+        callback(scheme, &((Pair*)*slot)->cdr);
+        break;
+    }
+}
+
 int main() 
 {
-    Init();
-    Scope scope;
-    vector<Expression*> prog;
     cout << "TinyScheme v0.0000000001\n>> ";
     InputPort in(cin);
-    string str;
-    while (in.ReadLine(str))
+
+    /* gc */
+    GC::Scheme scheme;
+    scheme.global_variables = GlobalVariables;
+    scheme.variable_use     = VariablesUse;
+    scheme.size_of_object   = SizeOfObject;
+    GC::InitSchemeAllocate(&scheme, 4 * 1024 * 1024);
+    while (true)
     {
+        string str;
+        if (!in.ReadLine(str))
+            break;
+
         Expression *program = nullptr;
         try {
             program = Parser(str);
-            Display(program->children[0]->Evaluate(&scope));
         }
         catch (string &e) {
             cout << e;
         }
-        prog.push_back(program);
         cout << "\n>> ";
     }
-    for (auto i : prog) DeleteExpression(i);
-    Scope::GC();
+    GC::DestroySchemeAllocate(&scheme);
+
     return 0;
 }
