@@ -275,11 +275,15 @@ const char *GetString(Pointer p)
     return ((String *)p)->str_;
 }
 
+typedef struct
+{
+    HEAP_OBJECT_HEAD;
+    size_t length_;
+};
+
 /* end of runtime */
 
 /* garbage collector */
-
-
 
 namespace GC
 {
@@ -299,7 +303,6 @@ namespace GC
         Pointer _top;
         Pointer _end;
     };
-
 
     struct Scheme
     {
@@ -520,6 +523,8 @@ namespace VM
         OP_POP,
         OP_LOAD,
         OP_STORE,
+        OP_LOAD_GLOBAL,
+        OP_STORE_GLOBAL,
         OP_SET,
         OP_GET,
         OP_EXTEND,
@@ -764,6 +769,34 @@ namespace VM
 
 /* end visual machine */
 
+/* compiler */
+
+namespace Compiler
+{
+    struct Compiler
+    {
+
+    };
+
+    int NewCurrentSlot();
+
+    void CompileExpr();
+
+    void CompileLocalDefine();
+
+    void CompileDefineVar();
+
+    void CompileDefineFunction();
+
+    void CompileIf();
+
+    void CompileBegin();
+
+    void CompileLambda();
+}
+
+/* end of compiler */
+
 struct Scope 
 {
     Scope *parent_;
@@ -794,6 +827,8 @@ struct Scope
         return addr;
     }
 };
+
+Scope *local = nullptr;
 
 struct Expression 
 {
@@ -842,6 +877,7 @@ Pointer Expression::Evaluate(GC::Scheme *scheme, Scope *scope)
     Expression *current = this;
     while (true) 
     {
+        local = scope;
         if (current->children.size() != 0) 
         {
             Expression *first = current->children[0];
@@ -995,7 +1031,7 @@ void Tokenizer(string &str, vector<const char*> &token)
 
 Expression *Parser(string &code) 
 {
-    Expression *program = new Expression(StringTable::Lookup("")), *current = program;
+    Expression program(StringTable::Lookup("")), *current = &program;
 
     vector<const char*> token;
     Tokenizer(code, token);
@@ -1019,7 +1055,7 @@ Expression *Parser(string &code)
     }
     if (current->parent != nullptr) 
         throw std::runtime_error("exception )");
-    return program;
+    return program.children[0];
 }
 
 /* end of parser */
@@ -1078,7 +1114,13 @@ size_t SizeOfObject(void *slot)
 
 void GlobalVariables(GC::Scheme *scheme, GC::ProcessReference_ callback)
 {
-
+    Scope *scope = local;
+    while (scope != nullptr)
+    {
+        for (auto &i : scope->records_)
+            callback(scheme, &i.second);
+        scope = scope->parent_;
+    }
 }
 
 void VariablesUse(
@@ -1099,13 +1141,21 @@ void VariablesUse(
     }
 }
 
+void Display(Pointer p)
+{
+
+}
+
 int main() 
 {
     cout << "TinyScheme v0.0000000001\n>> ";
     InputPort in(cin);
 
+    Scope scope;
     /* gc */
     GC::Scheme scheme;
+    scheme.malloc           = malloc;
+    scheme.free             = free;
     scheme.global_variables = GlobalVariables;
     scheme.variable_use     = VariablesUse;
     scheme.size_of_object   = SizeOfObject;
@@ -1119,9 +1169,11 @@ int main()
         Expression *program = nullptr;
         try {
             program = Parser(str);
+            Pointer result = program->children[0]->Evaluate(&scheme, &scope);
+            Display(result);
         }
-        catch (string &e) {
-            cout << e;
+        catch (std::runtime_error &e) {
+            cout << e.what();
         }
         cout << "\n>> ";
     }

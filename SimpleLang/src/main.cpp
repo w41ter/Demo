@@ -73,80 +73,96 @@ Program *program = NULL;
 static void createSystemFunctions();
 static void initGlobals();
 
-int main(int argc, char **argv) {
-	bool irOutput = false;
-	bool asmOutput = false;
-	bool objOutput = false;
-	bool execOutput = false;
-	TargetMachine::CodeGenFileType outputFileType = TargetMachine::CGFT_Null;
-	char *outputFileName = NULL;
-	int option;
-	while ((option = getopt(argc, argv, "o:scS")) != -1) {
-		switch (option) {
-		case 'o':
-			if (outputFileName != NULL) {
-				cout << "warning: ignoring '-o " << optarg << "' because '-o "
-						<< outputFileName << "' has set before" << endl;
-			} else {
-				outputFileName = optarg;
-			}
-			break;
-		case 's':
-			asmOutput = true;
-			break;
-		case 'c':
-			objOutput = true;
-			break;
-		case 'S':
-			irOutput = true;
-			break;
-		}
-	}
-	if (irOutput) {
-		if (asmOutput) {
+struct Drives {
+  bool irOutput_;
+  bool asmOutput_;
+  bool objOutput_;
+  bool exeOutput_;
+  const char *inputFileName_;
+  const char *outputFileName_;
+} drives = { false, false, false, false, nullptr, nullptr };
+
+TargetMachine::CodeGenFileType GetArguments(int argc, char **argv) {
+  TargetMachine::CodeGenFileType outputFileType = TargetMachine::CGFT_Null;
+  
+  int option;
+  while ((option = getopt(argc, argv, "o:scS")) != -1) {
+    switch (option) {
+    case 'o':
+      if (drives.outputFileName_ != NULL) {
+        cout << "warning: ignoring '-o " << optarg << "' because '-o "
+          << drives.outputFileName_ << "' has set before" << endl;
+      } 
+      else {
+        drives.outputFileName_ = optarg;
+      }
+      break;
+    case 's':
+      drives.asmOutput_ = true;
+      break;
+    case 'c':
+      drives.objOutput_ = true;
+      break;
+    case 'S':
+      drives.irOutput_ = true;
+      break;
+    }
+  }
+  
+	if (drives.irOutput_) {
+		if (drives.asmOutput_) {
 			cout << "warning: ignoring '-s' because '-S' has set" << endl;
 		}
-		if (objOutput) {
+		if (drives.objOutput_) {
 			cout << "warning: ignoring '-c' because '-S' has set" << endl;
 		}
-	} else if (asmOutput) {
-		if (objOutput) {
+	} 
+  else if (drives.asmOutput_) {
+		if (drives.objOutput_) {
 			cout << "warning: ignoring '-c' because '-s' has set" << endl;
 		}
 		outputFileType = TargetMachine::CGFT_AssemblyFile;
-	} else if (objOutput) {
+	} 
+  else if (drives.objOutput_) {
 		outputFileType = TargetMachine::CGFT_ObjectFile;
-	} else {
+	} 
+  else {
 		outputFileType = TargetMachine::CGFT_ObjectFile;
-		execOutput = true;
+		drives.execOutput_ = true;
 	}
 
-	char *inputFileName = NULL;
-	for (; optind < argc; optind++) {
-		if (inputFileName == NULL) {
-			inputFileName = argv[optind];
-		} else {
-			cout << "warning: ignoring input file " << argv[optind] << endl;
-		}
-	}
+  for (; optind < argc; optind++) {
+    if (drives.inputFileName_ == NULL) 
+      drives.inputFileName_ = argv[optind];
+    else 
+      cout << "warning: ignoring input file " << argv[optind] << endl;
+  }
+  return outputFileType;
+}
 
-	if (inputFileName != NULL) {
-		yyin = fopen(inputFileName, "r");
-		if (yyin == NULL) {
-			cout << "can not open file '" << inputFileName << "'" << endl;
-			exit(1);
-		}
-	}
+void Parser() {
+  if (drives.inputFileName_ != nullptr) {
+    yyin = fopen(drives.inputFileName_, "r");
+    if (yyin == nullptr) {
+      cout << "can not open file '" << drives.inputFileName_ << "'" << endl;
+      exit(1);
+    }
+  }
+  
+  if (yyin == nullptr) 
+    cout << "input program>>" << endl;
+    
+  yyparse();
 
-	if (yyin == NULL) {
-		cout << "input program>>" << endl;
-	}
-	yyparse();
+  if (yyin != nullptr) 
+    fclose(yyin);
+}
 
-	if (yyin != NULL) {
-		fclose(yyin);
-	}
+int main(int argc, char **argv) {
+  TargetMachine::CodeGenFileType outputFileType = GetArguments(argc, argv);
 
+  Parser();
+  
 	initGlobals();
 	createSystemFunctions();
 
