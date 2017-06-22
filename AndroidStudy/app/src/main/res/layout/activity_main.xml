@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context="net.hashcoding.study.MainActivity">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="15dp">
+
+            <TextView
+                android:id="@+id/textView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="5dp"
+                android:background="@android:color/darker_gray"
+                android:padding="15dp"
+                android:text="First Activity"
+                android:textAlignment="center" />
+
+            <TextView
+                android:id="@+id/showDialog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="5dp"
+                android:background="@android:color/darker_gray"
+                android:padding="15dp"
+                android:text="Show Dialog"
+                android:textAlignment="center" />
+
+            <TextView
+                android:id="@+id/sendBroadcast"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="5dp"
+                android:background="@android:color/darker_gray"
+                android:padding="15dp"
+                android:text="send broadcast"
+                android:textAlignment="center" />
+
+            <TextView
+                android:id="@+id/httpConnection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="5dp"
+                android:background="@android:color/darker_gray"
+                android:padding="15dp"
+                android:text="use http connection"
+                android:textAlignment="center" />
+
+            <TextView
+                android:id="@+id/ok_http"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="5dp"
+                android:background="@android:color/darker_gray"
+                android:padding="15dp"
+                android:text="use ok http"
+                android:textAlignment="center" />
+
+            <TextView
+                android:id="@+id/async_task"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="5dp"
+                android:background="@android:color/darker_gray"
+                android:padding="15dp"
+                android:text="use async task"
+                android:textAlignment="center" />
+
+        </LinearLayout>
+
+    </ScrollView>
+
+</RelativeLayout>
